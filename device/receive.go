@@ -31,6 +31,7 @@ type QueueInboundElement struct {
 	counter  uint64
 	keypair  *Keypair
 	endpoint conn.Endpoint
+	hidden   int
 }
 
 type QueueInboundElementsContainer struct {
@@ -127,13 +128,15 @@ func (device *Device) RoutineReceiveIncoming(maxBatchSize int, recv conn.Receive
 
 		// handle each packet in the batch
 		for i, size := range sizes[:count] {
-			if size < MinMessageSize {
+			hhLen := removeHidden(bufsArrs[i][0:size], device)
+
+			if hhLen < 0 {
 				continue
 			}
 
 			// check size of packet
 
-			packet := bufsArrs[i][:size]
+			packet := bufsArrs[i][hhLen:size]
 			msgType := binary.LittleEndian.Uint32(packet[:4])
 
 			switch msgType {
@@ -169,6 +172,7 @@ func (device *Device) RoutineReceiveIncoming(maxBatchSize int, recv conn.Receive
 				peer := value.peer
 				elem := device.GetInboundElement()
 				elem.packet = packet
+				elem.hidden = hhLen
 				elem.buffer = bufsArrs[i]
 				elem.keypair = keypair
 				elem.endpoint = endpoints[i]
@@ -507,7 +511,7 @@ func (peer *Peer) RoutineSequentialReceiver(maxBatchSize int) {
 				continue
 			}
 
-			bufs = append(bufs, elem.buffer[:MessageTransportOffsetContent+len(elem.packet)])
+			bufs = append(bufs, elem.buffer[elem.hidden:elem.hidden+MessageTransportOffsetContent+len(elem.packet)])
 		}
 
 		peer.rxBytes.Add(rxBytesLen)
